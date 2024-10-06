@@ -12,11 +12,7 @@ module.exports = {
     filename: "index.js"
   },
   resolve: {
-    extensions: [".ts", ".tsx", ".js"],
-    fallback: {
-      fs: false,
-      child_process: false
-    }
+    extensions: [".ts", ".tsx", ".js"]
   },
   module: {
     rules: [
