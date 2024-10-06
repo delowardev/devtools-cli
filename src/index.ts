@@ -1,10 +1,10 @@
-import { exec } from 'child_process';
-import path from 'path';
-import fs from 'fs';
-import os from 'os';
 import { cac } from 'cac';
 import prompts from 'prompts';
 import chalk from 'chalk';
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
+import { getDisplays, takeScreenshotAndOpen } from './platform';
 
 const cli = cac('screenshot');
 
@@ -13,12 +13,6 @@ const homeDir = process.env.HOME || os.homedir();
 
 // Path for caching custom paths (in temporary directory)
 const cachePath = path.join(os.tmpdir(), '.screenshot-cli-cache.json');
-
-interface Display {
-  index: number;
-  name: string;
-  resolution: string;
-}
 
 // Function to read cached paths
 function readCachedPaths(): string[] {
@@ -40,104 +34,6 @@ function writeCachedPaths(paths: string[]): void {
   } catch (error) {
     console.error('Error writing cache:', error);
   }
-}
-
-// Function to get display information
-function getDisplays(): Promise<Display[]> {
-  return new Promise((resolve, reject) => {
-    if (process.platform === 'darwin') {
-      exec('system_profiler SPDisplaysDataType -json', (error, stdout, stderr) => {
-        if (error) reject(error);
-        try {
-          const data = JSON.parse(stdout);
-          const displays = data.SPDisplaysDataType[0].spdisplays_ndrvs
-              .filter((display: any) => display['spdisplays_mirror'] === "spdisplays_off")
-              .map((display: any, index: number) => ({
-                index: index + 1,
-                name: display['_name'] || `Display ${index + 1}`,
-                resolution: display['_spdisplays_pixels'] || 'Unknown resolution'
-              }));
-          resolve(displays);
-        } catch (parseError) {
-          reject(parseError);
-        }
-      });
-    } else if (process.platform === 'win32') {
-      exec('wmic path Win32_VideoController get Caption,CurrentHorizontalResolution,CurrentVerticalResolution', (error, stdout, stderr) => {
-        if (error) reject(error);
-        const lines = stdout.trim().split('\n').slice(1);
-        const displays = lines.map((line, index) => {
-          const [name, width, height] = line.trim().split(/\s+/);
-          return {
-            index: index + 1,
-            name: name || `Display ${index + 1}`,
-            resolution: `${width}x${height}`
-          };
-        });
-        resolve(displays);
-      });
-    } else {
-      // Linux
-      exec('xrandr --query', (error, stdout, stderr) => {
-        if (error) reject(error);
-        const lines = stdout.split('\n');
-        const displays = lines
-            .filter(line => line.includes(' connected'))
-            .map((line, index) => {
-              const name = line.split(' ')[0];
-              const resolution = line.match(/(\d+x\d+)/)?.[1] || 'Unknown resolution';
-              return {
-                index: index + 1,
-                name: name || `Display ${index + 1}`,
-                resolution
-              };
-            });
-        resolve(displays);
-      });
-    }
-  });
-}
-
-// Function to take a screenshot and open it
-function takeScreenshotAndOpen(type: string, displayIndex: number | undefined, savePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let command: string;
-    if (process.platform === 'darwin') {
-      if (type === 'full') {
-        command = `screencapture -D ${displayIndex} "${savePath}" && open "${savePath}"`;
-      } else if (type === 'window') {
-        command = `screencapture -w "${savePath}" && open "${savePath}"`;
-      } else {
-        reject(new Error('Invalid screenshot type'));
-        return;
-      }
-    } else if (process.platform === 'win32') {
-      // Using PowerShell for Windows screenshots
-      if (type === 'full') {
-        command = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{PrtSc}'); Start-Sleep -Milliseconds 250; $img = [System.Windows.Forms.Clipboard]::GetImage(); $img.Save('${savePath}'); Start-Process '${savePath}'"`;
-      } else if (type === 'window') {
-        command = `powershell -command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('%{PrtSc}'); Start-Sleep -Milliseconds 250; $img = [System.Windows.Forms.Clipboard]::GetImage(); $img.Save('${savePath}'); Start-Process '${savePath}'"`;
-      } else {
-        reject(new Error('Invalid screenshot type'));
-        return;
-      }
-    } else {
-      // Linux
-      if (type === 'full') {
-        command = `import -window root "${savePath}" && xdg-open "${savePath}"`;
-      } else if (type === 'window') {
-        command = `import -window $(xdotool getactivewindow) "${savePath}" && xdg-open "${savePath}"`;
-      } else {
-        reject(new Error('Invalid screenshot type'));
-        return;
-      }
-    }
-
-    exec(command, (error, stdout, stderr) => {
-      if (error) reject(error);
-      else resolve(savePath);
-    });
-  });
 }
 
 // Function to validate custom path
